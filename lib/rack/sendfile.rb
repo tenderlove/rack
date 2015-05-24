@@ -109,8 +109,8 @@ module Rack
       end
     end
 
-    def call(env)
-      status, headers, body = @app.call(env)
+    def call(req, res)
+      status, headers, body = @app.call(req, res)
       if body.respond_to?(:to_path)
         case type = variation(env)
         when 'X-Accel-Redirect'
@@ -138,7 +138,6 @@ module Rack
           env['rack.errors'].puts "Unknown x-sendfile variation: '#{type}'.\n"
         end
       end
-      [status, headers, body]
     end
 
     private

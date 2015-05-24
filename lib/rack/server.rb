@@ -339,6 +339,20 @@ module Rack
         Options.new
       end
 
+      class Container < Struct.new :events, :chain
+        def wrap_request(req); req; end
+        def wrap_response(res); res; end
+
+        def call req, res
+          events.each { |e| e.start_request req, res }
+          begin
+            chain.call req, res
+          ensure
+            events.reverse_each { |e| e.finish_request req, res }
+          end
+        end
+      end
+
       def build_app(app)
         middleware[options[:environment]].reverse_each do |middleware|
           middleware = middleware.call(self) if middleware.respond_to?(:call)
@@ -346,7 +360,15 @@ module Rack
           klass, *args = middleware
           app = klass.new(app, *args)
         end
-        app
+        create_container event_handlers, app
+      end
+
+      def create_container(event_handlers, app)
+        Container.new event_handlers, app
+      end
+
+      def event_handlers
+        []
       end
 
       def wrapped_app

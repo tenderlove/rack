@@ -69,6 +69,14 @@ module Rack
       media_type_params['charset']
     end
 
+    def get_header(name)
+      @env[name]
+    end
+
+    def set_header(name, v)
+      @env[name] = v
+    end
+
     def scheme
       if @env[HTTPS] == 'on'
         'https'

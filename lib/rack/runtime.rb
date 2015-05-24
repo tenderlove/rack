@@ -15,16 +15,14 @@ module Rack
       @header_name += "-#{name}" if name
     end
 
-    def call(env)
+    def call(req, res)
       start_time = clock_time
-      status, headers, body = @app.call(env)
+      @app.call(req, res)
       request_time = clock_time - start_time
 
-      if !headers.has_key?(@header_name)
-        headers[@header_name] = FORMAT_STRING % request_time
+      if !res.get_header(@header_name)
+        res.set_header(@header_name, FORMAT_STRING % request_time)
       end
-
-      [status, headers, body]
     end
 
     private

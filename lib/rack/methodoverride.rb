@@ -6,26 +6,33 @@ module Rack
     HTTP_METHOD_OVERRIDE_HEADER = "HTTP_X_HTTP_METHOD_OVERRIDE".freeze
     ALLOWED_METHODS = %w[POST]
 
+    class Request < SimpleDelegator
+      attr_reader :request_method
+
+      def initialize req, new_method, old
+        super(req)
+        @request_method = new_method
+        @old_req_method = old
+      end
+    end
+
     def initialize(app)
       @app = app
     end
 
-    def call(env)
-      if allowed_methods.include?(env[REQUEST_METHOD])
-        method = method_override(env)
+    def call(req, res)
+      if allowed_methods.include?(req.request_method)
+        method = method_override(req)
         if HTTP_METHODS.include?(method)
-          env["rack.methodoverride.original_method"] = env[REQUEST_METHOD]
-          env[REQUEST_METHOD] = method
+          req = Request.new(req, method, req.request_method)
         end
       end
 
-      @app.call(env)
+      @app.call(req, res)
     end
 
-    def method_override(env)
-      req = Request.new(env)
-      method = method_override_param(req) ||
-        env[HTTP_METHOD_OVERRIDE_HEADER]
+    def method_override(req)
+      method = method_override_param(req) || req.get_header(HTTP_METHOD_OVERRIDE_HEADER)
       method.to_s.upcase
     end
 

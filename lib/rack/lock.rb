@@ -7,18 +7,18 @@ module Rack
   class Lock
     FLAG = 'rack.multithread'.freeze
 
-    def initialize(app, mutex = Mutex.new)
-      @app, @mutex = app, mutex
+    def initialize(mutex = Mutex.new)
+      @mutex = mutex
     end
 
-    def call(env)
+    def start_request req, res
+      p :START => [Thread.current, @mutex]
       @mutex.lock
-      begin
-        response = @app.call(env.merge(FLAG => false))
-        returned = response << BodyProxy.new(response.pop) { @mutex.unlock }
-      ensure
-        @mutex.unlock unless returned
-      end
+    end
+
+    def finish_request req, res
+      p :FINISH => [Thread.current, @mutex]
+      @mutex.unlock
     end
   end
 end

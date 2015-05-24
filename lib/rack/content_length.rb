@@ -1,3 +1,4 @@
+require 'delegate'
 require 'rack/utils'
 require 'rack/body_proxy'
 
@@ -11,27 +12,31 @@ module Rack
       @app = app
     end
 
-    def call(env)
-      status, headers, body = @app.call(env)
-      headers = HeaderHash.new(headers)
-
-      if !STATUS_WITH_NO_ENTITY_BODY.include?(status.to_i) &&
-         !headers[CONTENT_LENGTH] &&
-         !headers['Transfer-Encoding'] &&
-         body.respond_to?(:to_ary)
-
-        obody = body
-        body, length = [], 0
-        obody.each { |part| body << part; length += bytesize(part) }
-
-        body = BodyProxy.new(body) do
-          obody.close if obody.respond_to?(:close)
-        end
-
-        headers[CONTENT_LENGTH] = length.to_s
+    class BufferedResponse < SimpleDelegator
+      def initialize res
+        super
+        @buffer = []
       end
 
-      [status, headers, body]
+      def write chunk
+        @buffer << chunk
+      end
+
+      def finish
+        if !STATUS_WITH_NO_ENTITY_BODY.include?(status.to_i) &&
+          !get_header(CONTENT_LENGTH) &&
+          !get_header('Transfer-Encoding')
+
+          set_header CONTENT_LENGTH, @buffer.map { |part| bytesize part }.inject(:+).to_s
+        end
+
+        super
+      end
+    end
+
+    def call(req, res)
+      buffered_res = BufferedResponse.new res
+      @app.call req, buffered_res
     end
   end
 end

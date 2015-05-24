@@ -54,6 +54,52 @@ module Rack
         @app = app
       end
 
+      class Response
+        def initialize webrick_response, socket
+          @webrick_response = webrick_response
+          @socket           = socket
+        end
+
+        def status= status
+          @webrick_response.status = status
+        end
+
+        def status
+          @webrick_response.status
+        end
+
+        def set_header k, vs
+          res = @webrick_response
+          if k.downcase == "set-cookie"
+            res.cookies.concat vs.split("\n")
+          else
+            # Since WEBrick won't accept repeated headers,
+            # merge the values per RFC 1945 section 4.2.
+            res[k] = vs.split("\n").join(", ")
+          end
+        end
+
+        def get_header(k)
+          @webrick_response[k]
+        end
+
+        def write_head status, headers
+          self.status = status
+
+          headers.each do |key, value|
+            @webrick_response[key] = value
+          end
+        end
+
+        def write chunk
+          @socket.write chunk
+        end
+
+        def finish
+          @socket.close
+        end
+      end
+
       def service(req, res)
         res.rack = true
         env = req.meta_vars
@@ -85,37 +131,14 @@ module Rack
         end
         env[REQUEST_PATH] ||= [env[SCRIPT_NAME], env[PATH_INFO]].join
 
-        status, headers, body = @app.call(env)
-        begin
-          res.status = status.to_i
-          headers.each { |k, vs|
-            next if k.downcase == "rack.hijack"
+        rd, wr = IO.pipe
+        res.body = rd
+        res.chunked = true
 
-            if k.downcase == "set-cookie"
-              res.cookies.concat vs.split("\n")
-            else
-              # Since WEBrick won't accept repeated headers,
-              # merge the values per RFC 1945 section 4.2.
-              res[k] = vs.split("\n").join(", ")
-            end
-          }
+        m_req = @app.wrap_request Rack::Request.new env
+        m_res = @app.wrap_response Response.new res, wr
 
-          io_lambda = headers["rack.hijack"]
-          if io_lambda
-            rd, wr = IO.pipe
-            res.body = rd
-            res.chunked = true
-            io_lambda.call wr
-          elsif body.respond_to?(:to_path)
-            res.body = ::File.open(body.to_path, 'rb')
-          else
-            body.each { |part|
-              res.body << part
-            }
-          end
-        ensure
-          body.close  if body.respond_to? :close
-        end
+        @app.call(m_req, m_res)
       end
     end
   end
