@@ -1,4 +1,5 @@
 require 'rack/utils'
+require 'rack/media_type'
 
 module Rack
   # Rack::Request provides a convenient interface to a Rack
@@ -46,7 +47,7 @@ module Rack
     # For more information on the use of media types in HTTP, see:
     # http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.7
     def media_type
-      content_type && content_type.split(/\s*[;,]\s*/, 2).first.downcase
+      @media_type ||= MediaType.type(content_type)
     end
 
     # The media type parameters provided in CONTENT_TYPE as a Hash, or
@@ -55,10 +56,7 @@ module Rack
     # this method responds with the following Hash:
     #   { 'charset' => 'utf-8' }
     def media_type_params
-      return {} if content_type.nil?
-      Hash[*content_type.split(/\s*[;,]\s*/)[1..-1].
-        collect { |s| s.split('=', 2) }.
-        map { |k,v| [k.downcase, strip_doublequotes(v)] }.flatten]
+      @media_type_params ||= MediaType.params(content_type)
     end
 
     # The character set of the request body if a "charset" media type
@@ -202,9 +200,9 @@ module Rack
       if @env["rack.request.query_string"] == query_string
         @env["rack.request.query_hash"]
       else
-        p = parse_query(query_string, '&;')
+        query_hash = parse_query(query_string, '&;')
         @env["rack.request.query_string"] = query_string
-        @env["rack.request.query_hash"]   = p
+        @env["rack.request.query_hash"]   = query_hash
       end
     end
 
@@ -215,7 +213,7 @@ module Rack
     def POST
       if @env["rack.input"].nil?
         raise "Missing rack.input"
-      elsif @env["rack.request.form_input"].equal? @env["rack.input"]
+      elsif @env["rack.request.form_input"] == @env["rack.input"]
         @env["rack.request.form_hash"]
       elsif form_data? || parseable_data?
         unless @env["rack.request.form_hash"] = parse_multipart(env)
@@ -265,7 +263,6 @@ module Rack
         self.GET[k] = v
       end
       @params = nil
-      nil
     end
 
     # Destructively delete a parameter, whether it's in GET or POST. Returns the value of the deleted parameter.
@@ -314,6 +311,10 @@ module Rack
       hash.replace Utils.parse_cookies(@env)
       @env["rack.request.cookie_string"] = string
       hash
+    end
+
+    def query_parser
+      Utils.default_query_parser
     end
 
     def xhr?
@@ -372,11 +373,11 @@ module Rack
       end
 
       def parse_query(qs, d='&')
-        Utils.parse_nested_query(qs, d)
+        query_parser.parse_nested_query(qs, d)
       end
 
       def parse_multipart(env)
-        Rack::Multipart.parse_multipart(env)
+        Rack::Multipart.parse_multipart(env, query_parser)
       end
 
       def parse_http_accept_header(header)
@@ -389,14 +390,5 @@ module Rack
           [attribute, quality]
         end
       end
-
-  private
-    def strip_doublequotes(s)
-      if s[0] == ?" && s[-1] == ?"
-        s[1..-2]
-      else
-        s
-      end
-    end
   end
 end

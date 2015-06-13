@@ -1,3 +1,4 @@
+require 'minitest/bacon'
 require 'stringio'
 require 'rack/methodoverride'
 require 'rack/mock'
@@ -69,6 +70,13 @@ EOF
       app.call env
     rescue EOFError
     end
+
+    env["REQUEST_METHOD"].should.equal "POST"
+  end
+
+  should "not modify REQUEST_METHOD for POST requests when the params are unparseable" do
+    env = Rack::MockRequest.env_for("/", :method => "POST", :input => "(%bad-params%)")
+    app.call env
 
     env["REQUEST_METHOD"].should.equal "POST"
   end

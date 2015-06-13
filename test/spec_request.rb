@@ -1,3 +1,4 @@
+require 'minitest/bacon'
 require 'stringio'
 require 'cgi'
 require 'rack/request'
@@ -145,6 +146,26 @@ describe Rack::Request do
     req.params.should.equal req.GET.merge(req.POST)
   end
 
+  should "should use the query_parser for query parsing" do
+    c = Class.new(Rack::QueryParser::Params) do
+      def initialize(*)
+        super
+        @params = Hash.new{|h,k| h[k.to_s] if k.is_a?(Symbol)}
+      end
+    end
+    parser = Rack::QueryParser.new(c, 65536)
+    c = Class.new(Rack::Request) do
+      define_method(:query_parser) do
+        parser
+      end
+    end
+    req = c.new(Rack::MockRequest.env_for("/?foo=bar&quux=bla"))
+    req.GET[:foo].should.equal "bar"
+    req.GET[:quux].should.equal "bla"
+    req.params[:foo].should.equal "bar"
+    req.params[:quux].should.equal "bla"
+  end
+
   should "use semi-colons as separators for query strings in GET" do
     req = Rack::Request.new(Rack::MockRequest.env_for("/?foo=bar&quux=b;la;wun=duh"))
     req.query_string.should.equal "foo=bar&quux=b;la;wun=duh"
@@ -190,6 +211,34 @@ describe Rack::Request do
     req.GET.should.equal "foo" => "quux"
     req.POST.should.equal "foo" => "bar", "quux" => "bla"
     req.params.should.equal req.GET.merge(req.POST)
+  end
+
+  should "use the query_parser's params_class for multipart params" do
+    c = Class.new(Rack::QueryParser::Params) do
+      def initialize(*)
+        super
+        @params = Hash.new{|h,k| h[k.to_s] if k.is_a?(Symbol)}
+      end
+    end
+    parser = Rack::QueryParser.new(c, 65536)
+    c = Class.new(Rack::Request) do
+      define_method(:query_parser) do
+        parser
+      end
+    end
+    mr = Rack::MockRequest.env_for("/?foo=quux",
+      "REQUEST_METHOD" => 'POST',
+      :input => "foo=bar&quux=bla"
+    )
+    req = c.new mr
+
+    req.params
+
+    req.GET[:foo].should.equal "quux"
+    req.POST[:foo].should.equal "bar"
+    req.POST[:quux].should.equal "bla"
+    req.params[:foo].should.equal "bar"
+    req.params[:quux].should.equal "bla"
   end
 
   should "raise if input params has invalid %-encoding" do
@@ -280,6 +329,20 @@ describe Rack::Request do
         :input => input)
     req.params.should.equal "foo" => "bar", "quux" => "bla"
     input.read.should.equal "foo=bar&quux=bla"
+  end
+
+  should "safely accepts POST requests with empty body" do
+    mr = Rack::MockRequest.env_for("/",
+      "REQUEST_METHOD" => "POST",
+      "CONTENT_TYPE"   => "multipart/form-data, boundary=AaB03x",
+      "CONTENT_LENGTH" => '0',
+      :input => nil)
+
+    req = Rack::Request.new mr
+    req.query_string.should.equal ""
+    req.GET.should.be.empty
+    req.POST.should.be.empty
+    req.params.should.equal({})
   end
 
   should "clean up Safari's ajax POST body" do
@@ -933,28 +996,6 @@ EOF
       lambda{req.POST}.should.not.raise(EOFError)
       req.POST["fileupload"][:tempfile].size.should.equal 4
     end
-  end
-
-  should "work around buggy 1.8.* Tempfile equality" do
-    input = <<EOF
---AaB03x\r
-content-disposition: form-data; name="huge"; filename="huge"\r
-\r
-foo\r
---AaB03x--
-EOF
-
-    rack_input = Tempfile.new("rackspec")
-    rack_input.write(input)
-    rack_input.rewind
-
-    req = Rack::Request.new Rack::MockRequest.env_for("/",
-                      "CONTENT_TYPE" => "multipart/form-data, boundary=AaB03x",
-                      "CONTENT_LENGTH" => input.size,
-                      :input => rack_input)
-
-    lambda{ req.POST }.should.not.raise
-    lambda{ req.POST }.should.not.raise("input re-processed!")
   end
 
   should "use form_hash when form_input is a Tempfile" do

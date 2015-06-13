@@ -1,3 +1,4 @@
+require 'minitest/bacon'
 # -*- encoding: utf-8 -*-
 require 'rack/utils'
 require 'rack/mock'
@@ -6,19 +7,11 @@ require 'timeout'
 describe Rack::Utils do
 
   # A helper method which checks
-  # if certain query parameters 
+  # if certain query parameters
   # are equal.
   def equal_query_to(query)
     parts = query.split('&')
     lambda{|other| (parts & other.split('&')) == parts }
-  end
-
-  def kcodeu
-    one8 = RUBY_VERSION.to_f < 1.9
-    default_kcode, $KCODE = $KCODE, 'U' if one8
-    yield
-  ensure
-    $KCODE = default_kcode if one8
   end
 
   should "round trip binary data" do
@@ -47,30 +40,8 @@ describe Rack::Utils do
     Rack::Utils.escape(matz_name_sep).should.equal '%E3%81%BE%E3%81%A4+%E3%82%82%E3%81%A8'
   end
 
-  if RUBY_VERSION[/^\d+\.\d+/] == '1.8'
-    should "escape correctly for multibyte characters if $KCODE is set to 'U'" do
-      kcodeu do
-        matz_name = "\xE3\x81\xBE\xE3\x81\xA4\xE3\x82\x82\xE3\x81\xA8".unpack("a*")[0] # Matsumoto
-        matz_name.force_encoding("UTF-8") if matz_name.respond_to? :force_encoding
-        Rack::Utils.escape(matz_name).should.equal '%E3%81%BE%E3%81%A4%E3%82%82%E3%81%A8'
-        matz_name_sep = "\xE3\x81\xBE\xE3\x81\xA4 \xE3\x82\x82\xE3\x81\xA8".unpack("a*")[0] # Matsu moto
-        matz_name_sep.force_encoding("UTF-8") if matz_name_sep.respond_to? :force_encoding
-        Rack::Utils.escape(matz_name_sep).should.equal '%E3%81%BE%E3%81%A4+%E3%82%82%E3%81%A8'
-      end
-    end
-
-    should "unescape multibyte characters correctly if $KCODE is set to 'U'" do
-      kcodeu do
-        Rack::Utils.unescape('%E3%81%BE%E3%81%A4+%E3%82%82%E3%81%A8').should.equal(
-          "\xE3\x81\xBE\xE3\x81\xA4 \xE3\x82\x82\xE3\x81\xA8".unpack("a*")[0])
-      end
-    end
-  end
-
   should "escape objects that responds to to_s" do
-    kcodeu do
-      Rack::Utils.escape(:id).should.equal "id"
-    end
+    Rack::Utils.escape(:id).should.equal "id"
   end
 
   if "".respond_to?(:encode)
@@ -78,7 +49,7 @@ describe Rack::Utils do
       Rack::Utils.escape("ø".encode("ISO-8859-1")).should.equal "%F8"
     end
   end
-  
+
   should "not hang on escaping long strings that end in % (http://redmine.ruby-lang.org/issues/5149)" do
     lambda {
       timeout(1) do
@@ -127,7 +98,7 @@ describe Rack::Utils do
     ex = { "foo" => nil }
     ex["foo"] = ex
 
-    params = Rack::Utils::KeySpaceConstrainedParams.new
+    params = Rack::Utils::KeySpaceConstrainedParams.new(65536)
     params['foo'] = params
     lambda {
       params.to_params_hash.to_s.should.equal ex.to_s
@@ -228,10 +199,25 @@ describe Rack::Utils do
       should.raise(Rack::Utils::ParameterTypeError).
       message.should.equal "expected Array (got String) for param `y'"
 
-    if RUBY_VERSION.to_f > 1.9
-      lambda { Rack::Utils.parse_nested_query("foo%81E=1") }.
-        should.raise(Rack::Utils::InvalidParameterError).
-        message.should.equal "invalid byte sequence in UTF-8"
+    lambda { Rack::Utils.parse_nested_query("foo%81E=1") }.
+      should.raise(Rack::Utils::InvalidParameterError).
+      message.should.equal "invalid byte sequence in UTF-8"
+  end
+
+  should "allow setting the params hash class to use for parsing query strings" do
+    begin
+      default_parser = Rack::Utils.default_query_parser
+      param_parser_class = Class.new(Rack::QueryParser::Params) do
+        def initialize(*)
+          super
+          @params = Hash.new{|h,k| h[k.to_s] if k.is_a?(Symbol)}
+        end
+      end
+      Rack::Utils.default_query_parser = Rack::QueryParser.new(param_parser_class, 65536)
+      Rack::Utils.parse_query(",foo=bar;,", ";,")[:foo].should.equal "bar"
+      Rack::Utils.parse_nested_query("x[y][][z]=1&x[y][][w]=2")[:x][:y][0][:z].should.equal "1"
+    ensure
+      Rack::Utils.default_query_parser = default_parser
     end
   end
 
@@ -372,16 +358,10 @@ describe Rack::Utils do
 
   should "escape html entities even on MRI when it's bugged" do
     test_escape = lambda do
-      kcodeu do
-        Rack::Utils.escape_html("\300<").should.equal "\300&lt;"
-      end
+      Rack::Utils.escape_html("\300<").should.equal "\300&lt;"
     end
 
-    if RUBY_VERSION.to_f < 1.9
-      test_escape.call
-    else
-      test_escape.should.raise(ArgumentError)
-    end
+    test_escape.should.raise(ArgumentError)
   end
 
   if "".respond_to?(:encode)
@@ -412,10 +392,6 @@ describe Rack::Utils do
 
     helper.call(%w(foo bar identity), [["foo", 0], ["bar", 0]]).should.equal("identity")
     helper.call(%w(foo bar baz identity), [["*", 0], ["identity", 0.1]]).should.equal("identity")
-  end
-
-  should "return the bytesize of String" do
-    Rack::Utils.bytesize("FOO\xE2\x82\xAC").should.equal 6
   end
 
   should "should perform constant time string comparison" do

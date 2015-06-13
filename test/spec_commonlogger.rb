@@ -1,3 +1,4 @@
+require 'minitest/bacon'
 require 'rack/commonlogger'
 require 'rack/lint'
 require 'rack/mock'
@@ -58,13 +59,14 @@ describe Rack::CommonLogger do
   end
 
   def with_mock_time(t = 0)
-    mc = class <<Time; self; end
+    mc = class << Time; self; end
     mc.send :alias_method, :old_now, :now
     mc.send :define_method, :now do
       at(t)
     end
     yield
   ensure
+    mc.send :undef_method, :now
     mc.send :alias_method, :now, :old_now
   end
 

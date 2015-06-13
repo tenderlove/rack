@@ -24,7 +24,7 @@ module Rack
     class WEBrick < ::WEBrick::HTTPServlet::AbstractServlet
       def self.run(app, options={})
         environment  = ENV['RACK_ENV'] || 'development'
-        default_host = environment == 'development' ? 'localhost' : '0.0.0.0'
+        default_host = environment == 'development' ? 'localhost' : nil
 
         options[:BindAddress] = options.delete(:Host) || default_host
         options[:Port] ||= 8080
@@ -106,7 +106,7 @@ module Rack
         env.delete_if { |k, v| v.nil? }
 
         rack_input = StringIO.new(req.body.to_s)
-        rack_input.set_encoding(Encoding::BINARY) if rack_input.respond_to?(:set_encoding)
+        rack_input.set_encoding(Encoding::BINARY)
 
         env.update({"rack.version" => Rack::VERSION,
                      "rack.input" => rack_input,

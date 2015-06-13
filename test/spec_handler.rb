@@ -1,3 +1,4 @@
+require 'minitest/bacon'
 require 'rack/handler'
 
 class Rack::Handler::Lobster; end
@@ -12,16 +13,15 @@ describe Rack::Handler do
       Rack::Handler.get('fastcgi').should.equal Rack::Handler::FastCGI
     rescue LoadError
     end
-
-    begin
-      Rack::Handler.get('mongrel').should.equal Rack::Handler::Mongrel
-    rescue LoadError
-    end
   end
 
   should "raise LoadError if handler doesn't exist" do
     lambda {
       Rack::Handler.get('boom')
+    }.should.raise(LoadError)
+
+    lambda {
+      Rack::Handler.get('Object')
     }.should.raise(LoadError)
   end
 

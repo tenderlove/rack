@@ -1,6 +1,9 @@
+require 'minitest/bacon'
 require 'rack/static'
 require 'rack/lint'
 require 'rack/mock'
+require 'zlib'
+require 'stringio'
 
 class DummyApp
   def call(env)
@@ -18,10 +21,15 @@ describe Rack::Static do
   OPTIONS = {:urls => ["/cgi"], :root => root}
   STATIC_OPTIONS = {:urls => [""], :root => "#{root}/static", :index => 'index.html'}
   HASH_OPTIONS = {:urls => {"/cgi/sekret" => 'cgi/test'}, :root => root}
+  GZIP_OPTIONS = {:urls => ["/cgi"], :root => root, :gzip=>true}
 
+  before do
   @request = Rack::MockRequest.new(static(DummyApp.new, OPTIONS))
   @static_request = Rack::MockRequest.new(static(DummyApp.new, STATIC_OPTIONS))
   @hash_request = Rack::MockRequest.new(static(DummyApp.new, HASH_OPTIONS))
+  @gzip_request = Rack::MockRequest.new(static(DummyApp.new, GZIP_OPTIONS))
+  @header_request = Rack::MockRequest.new(static(DummyApp.new, HEADER_OPTIONS))
+  end
 
   it "serves files" do
     res = @request.get("/cgi/test")
@@ -70,6 +78,30 @@ describe Rack::Static do
     res.body.should == "Hello World"
   end
 
+  it "serves gzipped files if client accepts gzip encoding and gzip files are present" do
+    res = @gzip_request.get("/cgi/test", 'HTTP_ACCEPT_ENCODING'=>'deflate, gzip')
+    res.should.be.ok
+    res.headers['Content-Encoding'].should.equal 'gzip'
+    res.headers['Content-Type'].should.equal 'text/plain'
+    Zlib::GzipReader.wrap(StringIO.new(res.body), &:read).should =~ /ruby/
+  end
+
+  it "serves regular files if client accepts gzip encoding and gzip files are not present" do
+    res = @gzip_request.get("/cgi/rackup_stub.rb", 'HTTP_ACCEPT_ENCODING'=>'deflate, gzip')
+    res.should.be.ok
+    res.headers['Content-Encoding'].should.equal nil
+    res.headers['Content-Type'].should.equal 'text/x-script.ruby'
+    res.body.should =~ /ruby/
+  end
+
+  it "serves regular files if client does not accept gzip encoding" do
+    res = @gzip_request.get("/cgi/test")
+    res.should.be.ok
+    res.headers['Content-Encoding'].should.equal nil
+    res.headers['Content-Type'].should.equal 'text/plain'
+    res.body.should =~ /ruby/
+  end
+
   it "supports serving fixed cache-control (legacy option)" do
     opts = OPTIONS.merge(:cache_control => 'public')
     request = Rack::MockRequest.new(static(DummyApp.new, opts))
@@ -86,7 +118,6 @@ describe Rack::Static do
     ['cgi/assets/javascripts', {'Cache-Control' => 'public, max-age=500'}],
     [/\.(css|erb)\z/, {'Cache-Control' => 'public, max-age=600'}]
   ]}
-  @header_request = Rack::MockRequest.new(static(DummyApp.new, HEADER_OPTIONS))
 
   it "supports header rule :all" do
     # Headers for all files via :all shortcut

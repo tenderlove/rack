@@ -20,7 +20,7 @@ module Rack
       @app.call(req, res)
       request_time = clock_time - start_time
 
-      if !res.get_header(@header_name)
+      unless res.get_header(@header_name)
         res.set_header(@header_name, FORMAT_STRING % request_time)
       end
     end

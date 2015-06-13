@@ -1,3 +1,6 @@
+# coding: utf-8
+
+require 'minitest/bacon'
 require 'rack/utils'
 require 'rack/mock'
 
@@ -153,6 +156,19 @@ describe Rack::Multipart do
     params["files"][:tempfile].read.should.equal "contents"
   end
 
+  should "accept the params hash class to use for multipart parsing" do
+    c = Class.new(Rack::QueryParser::Params) do
+      def initialize(*)
+        super
+        @params = Hash.new{|h,k| h[k.to_s] if k.is_a?(Symbol)}
+      end
+    end
+    query_parser = Rack::QueryParser.new c, 65536
+    env = Rack::MockRequest.env_for("/", multipart_fixture(:text))
+    params = Rack::Multipart.parse_multipart(env, query_parser)
+    params[:files][:type].should.equal "text/plain"
+  end
+
   should "preserve extension in the created tempfile" do
     env = Rack::MockRequest.env_for("/", multipart_fixture(:text))
     params = Rack::Multipart.parse_multipart(env)
@@ -258,6 +274,12 @@ describe Rack::Multipart do
     params["files"][:head].should.equal head
     params["files"][:name].should.equal "files"
     params["files"][:tempfile].read.should.equal "contents"
+  end
+
+  should "parse multipart form with an encoded word filename" do
+    env = Rack::MockRequest.env_for '/', multipart_fixture(:filename_with_encoded_words)
+    params = Rack::Multipart.parse_multipart(env)
+    params["files"][:filename].should.equal "файл"
   end
 
   should "not include file params if no file was selected" do

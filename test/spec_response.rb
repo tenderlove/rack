@@ -1,3 +1,5 @@
+require 'minitest/bacon'
+require 'rack'
 require 'rack/response'
 require 'stringio'
 
@@ -231,6 +233,14 @@ describe Rack::Response do
     res.should.be.successful
     res.should.be.accepted
 
+    res.status = 204
+    res.should.be.successful
+    res.should.be.no_content
+
+    res.status = 301
+    res.should.be.redirect
+    res.should.be.moved_permanently
+
     res.status = 400
     res.should.not.be.successful
     res.should.be.client_error
@@ -250,6 +260,11 @@ describe Rack::Response do
     res.should.not.be.successful
     res.should.be.client_error
     res.should.be.method_not_allowed
+
+    res.status = 412
+    res.should.not.be.successful
+    res.should.be.client_error
+    res.should.be.precondition_failed
 
     res.status = 418
     res.should.not.be.successful
