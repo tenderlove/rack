@@ -20,27 +20,22 @@ module Rack
       @no_cache_control = no_cache_control
     end
 
-    def call(env)
-      status, headers, body = @app.call(env)
+    def call(req, res)
+      @app.call(req, res)
 
-      if etag_status?(status) && etag_body?(body) && !skip_caching?(headers)
-        original_body = body
-        digest, new_body = digest_body(body)
-        body = Rack::BodyProxy.new(new_body) do
-          original_body.close if original_body.respond_to?(:close)
-        end
-        headers[ETAG_STRING] = %(W/"#{digest}") if digest
+      if etag_status?(res.status) && etag_body?(res.buffer) && !skip_caching?(req)
+        digest, new_body = digest_body(res.buffer)
+        res.replace new_body
+        res.set_header(ETAG_STRING, %(W/"#{digest}")) if digest
       end
 
-      unless headers[CACHE_CONTROL]
+      unless res.get_header(CACHE_CONTROL)
         if digest
-          headers[CACHE_CONTROL] = @cache_control if @cache_control
+          res.set_header(CACHE_CONTROL, @cache_control) if @cache_control
         else
-          headers[CACHE_CONTROL] = @no_cache_control if @no_cache_control
+          res.set_header(CACHE_CONTROL, @no_cache_control) if @no_cache_control
         end
       end
-
-      [status, headers, body]
     end
 
     private
@@ -53,9 +48,9 @@ module Rack
         !body.respond_to?(:to_path)
       end
 
-      def skip_caching?(headers)
-        (headers[CACHE_CONTROL] && headers[CACHE_CONTROL].include?('no-cache')) ||
-          headers.key?(ETAG_STRING) || headers.key?('Last-Modified')
+      def skip_caching?(req)
+        (req.get_header(CACHE_CONTROL) && req.get_header(CACHE_CONTROL).include?('no-cache')) ||
+          req.get_header(ETAG_STRING) || req.get_header('Last-Modified')
       end
 
       def digest_body(body)

@@ -68,11 +68,31 @@ module Rack
     end
 
     def get_header(name)
-      @env[name]
+      if block_given?
+        @env.fetch(name) { |x| yield x }
+      else
+        @env[name]
+      end
+    end
+
+    def delete_header(name)
+      @env.delete name
     end
 
     def set_header(name, v)
+      p "SETTING #########################################"
+      p name => v
+      p @env.object_id
+      p "SETTING #########################################"
       @env[name] = v
+    end
+
+    def have_header?(name)
+      @env.key? name
+    end
+
+    def each_header(&block)
+      @env.each(&block)
     end
 
     def scheme
@@ -278,6 +298,7 @@ module Rack
 
     # shortcut for request.params[key]
     def [](key)
+      raise "this should be get_header" if @env.key? key
       params[key.to_s]
     end
 

@@ -8,17 +8,13 @@ module Rack
       @app = app
     end
 
-    def call(env)
-      status, headers, body = @app.call(env)
+    def call(req, res)
+      # FIXME: This needs a buffered response that writes 0 bytes if the req
+      # is a head.
+      @app.call(req, res)
 
-      if env[REQUEST_METHOD] == HEAD
-        [
-          status, headers, Rack::BodyProxy.new([]) do
-            body.close if body.respond_to? :close
-          end
-        ]
-      else
-        [status, headers, body]
+      if req.head?
+        res.finish
       end
     end
   end

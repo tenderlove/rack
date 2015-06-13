@@ -22,14 +22,23 @@ module Rack
         @buffer << chunk
       end
 
+      def buffer
+        @buffer
+      end
+
+      def replace(buffer)
+        @buffer = buffer
+      end
+
       def finish
-        if !STATUS_WITH_NO_ENTITY_BODY.include?(status.to_i) &&
+        if !Rack::Utils::STATUS_WITH_NO_ENTITY_BODY.include?(status.to_i) &&
           !get_header(CONTENT_LENGTH) &&
           !get_header(TRANSFER_ENCODING)
 
           set_header CONTENT_LENGTH, @buffer.map { |part| bytesize part }.inject(:+).to_s
         end
 
+        @buffer.each { |chunk| __getobj__.write chunk }
         super
       end
     end

@@ -212,14 +212,14 @@ module Rack
           initialize_sid
         end
 
-        def call(env)
-          context(env)
+        def call(req, res)
+          context(req, res)
         end
 
-        def context(env, app=@app)
-          prepare_session(env)
-          status, headers, body = app.call(env)
-          commit_session(env, status, headers, body)
+        def context(req, res, app=@app)
+          prepare_session(req)
+          app.call(req, res)
+          commit_session(req, res)
         end
 
         private
@@ -247,11 +247,13 @@ module Rack
         # Sets the lazy session at 'rack.session' and places options and session
         # metadata into 'rack.session.options'.
 
-        def prepare_session(env)
-          session_was                  = env[ENV_SESSION_KEY]
-          env[ENV_SESSION_KEY]         = session_class.new(self, env)
-          env[ENV_SESSION_OPTIONS_KEY] = @default_options.dup
-          env[ENV_SESSION_KEY].merge! session_was if session_was
+        def prepare_session(req)
+          session_was                  = req.get_header ENV_SESSION_KEY
+          session = session_class.new(self, env)
+          session.merge! session_was if session_was
+
+          req.set_header ENV_SESSION_KEY, session
+          req.set_header ENV_SESSION_OPTIONS_KEY, @default_options.dup
         end
 
         # Extracts the session id from provided cookies and passes it and the
@@ -274,8 +276,8 @@ module Rack
 
         # Returns the current session id from the SessionHash.
 
-        def current_session_id(env)
-          env[ENV_SESSION_KEY].id
+        def current_session_id(req)
+          req.get_header(ENV_SESSION_KEY).id
         end
 
         # Check if the session exists or not.
@@ -288,12 +290,12 @@ module Rack
         # Session should be committed if it was loaded, any of specific options like :renew, :drop
         # or :expire_after was given and the security permissions match. Skips if skip is given.
 
-        def commit_session?(env, session, options)
+        def commit_session?(req, session, options)
           if options[:skip]
             false
           else
             has_session = loaded_session?(session) || forced_session_update?(session, options)
-            has_session && security_matches?(env, options)
+            has_session && security_matches?(req, options)
           end
         end
 
@@ -309,9 +311,8 @@ module Rack
           options.values_at(:max_age, :renew, :drop, :defer, :expire_after).any?
         end
 
-        def security_matches?(env, options)
+        def security_matches?(request, options)
           return true unless options[:secure]
-          request = Rack::Request.new(env)
           request.ssl?
         end
 
@@ -320,22 +321,22 @@ module Rack
         # and the :defer option is not true, a cookie will be added to the
         # response with the session's id.
 
-        def commit_session(env, status, headers, body)
-          session = env[ENV_SESSION_KEY]
+        def commit_session(req, res)
+          session = req.get_header ENV_SESSION_KEY
           options = session.options
 
           if options[:drop] || options[:renew]
-            session_id = destroy_session(env, session.id || generate_sid, options)
-            return [status, headers, body] unless session_id
+            session_id = destroy_session(req, session.id || generate_sid, options)
+            return unless session_id
           end
 
-          return [status, headers, body] unless commit_session?(env, session, options)
+          return unless commit_session?(req, session, options)
 
           session.send(:load!) unless loaded_session?(session)
           session_id ||= session.id
           session_data = session.to_hash.delete_if { |k,v| v.nil? }
 
-          if not data = set_session(env, session_id, session_data, options)
+          if not data = set_session(req, session_id, session_data, options)
             env["rack.errors"].puts("Warning! #{self.class.name} failed to save session. Content dropped.")
           elsif options[:defer] and not options[:renew]
             env["rack.errors"].puts("Deferring cookie for #{session_id}") if $VERBOSE
@@ -344,19 +345,18 @@ module Rack
             cookie[:value] = data
             cookie[:expires] = Time.now + options[:expire_after] if options[:expire_after]
             cookie[:expires] = Time.now + options[:max_age] if options[:max_age]
-            set_cookie(env, headers, cookie.merge!(options))
+            set_cookie(req, res, cookie.merge!(options))
           end
-
-          [status, headers, body]
         end
 
         # Sets the cookie back to the client with session id. We skip the cookie
         # setting if the value didn't change (sid is the same) or expires was given.
 
-        def set_cookie(env, headers, cookie)
-          request = Rack::Request.new(env)
+        def set_cookie(request, res, cookie)
           if request.cookies[@key] != cookie[:value] || cookie[:expires]
-            Utils.set_cookie_header!(headers, @key, cookie)
+            header = res.get_header SET_COOKIE
+            header = Utils.make_cookie_header(header, @key, cookie)
+            res.set_header SET_COOKIE, header
           end
         end
 

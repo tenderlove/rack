@@ -19,46 +19,40 @@ module Rack
       @app = app
     end
 
-    def call(env)
-      case env[REQUEST_METHOD]
-      when "GET", "HEAD"
-        status, headers, body = @app.call(env)
-        headers = Utils::HeaderHash.new(headers)
-        if status == 200 && fresh?(env, headers)
+    def call(req, res)
+      if req.get? || req.head?
+        @app.call(req, res)
+        if res.status == 200 && fresh?(req)
           status = 304
           headers.delete(CONTENT_TYPE)
           headers.delete(CONTENT_LENGTH)
-          original_body = body
-          body = Rack::BodyProxy.new([]) do
-            original_body.close if original_body.respond_to?(:close)
-          end
+          res.replace []
         end
-        [status, headers, body]
       else
-        @app.call(env)
+        @app.call(req, res)
       end
     end
 
   private
 
-    def fresh?(env, headers)
-      modified_since = env['HTTP_IF_MODIFIED_SINCE']
-      none_match     = env['HTTP_IF_NONE_MATCH']
+    def fresh?(request)
+      modified_since = request.get_header 'HTTP_IF_MODIFIED_SINCE'
+      none_match     = request.get_header 'HTTP_IF_NONE_MATCH'
 
       return false unless modified_since || none_match
 
       success = true
-      success &&= modified_since?(to_rfc2822(modified_since), headers) if modified_since
-      success &&= etag_matches?(none_match, headers) if none_match
+      success &&= modified_since?(to_rfc2822(modified_since), request) if modified_since
+      success &&= etag_matches?(none_match, request) if none_match
       success
     end
 
-    def etag_matches?(none_match, headers)
-      etag = headers['ETag'] and etag == none_match
+    def etag_matches?(none_match, request)
+      etag = request.get_header('ETag') and etag == none_match
     end
 
-    def modified_since?(modified_since, headers)
-      last_modified = to_rfc2822(headers['Last-Modified']) and
+    def modified_since?(modified_since, request)
+      last_modified = to_rfc2822(request.get_header('Last-Modified')) and
         modified_since and
         modified_since >= last_modified
     end

@@ -12,12 +12,10 @@ module Rack
     end
 
     def start_request req, res
-      p :START => [Thread.current, @mutex]
       @mutex.lock
     end
 
     def finish_request req, res
-      p :FINISH => [Thread.current, @mutex]
       @mutex.unlock
     end
   end
