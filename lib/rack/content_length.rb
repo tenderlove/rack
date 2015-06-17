@@ -35,7 +35,7 @@ module Rack
           !get_header(CONTENT_LENGTH) &&
           !get_header(TRANSFER_ENCODING)
 
-          set_header CONTENT_LENGTH, @buffer.map { |part| bytesize part }.inject(:+).to_s
+          set_header CONTENT_LENGTH, @buffer.map { |part| part.bytesize }.inject(:+).to_s
         end
 
         @buffer.each { |chunk| __getobj__.write chunk }

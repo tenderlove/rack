@@ -341,7 +341,7 @@ module Rack
 
       class Container < Struct.new :events, :chain
         def wrap_request(req); req; end
-        def wrap_response(res); res; end
+        def wrap_response(res, req); res; end
 
         def call req, res
           events.each { |e| e.start_request req, res }

@@ -80,10 +80,6 @@ module Rack
     end
 
     def set_header(name, v)
-      p "SETTING #########################################"
-      p name => v
-      p @env.object_id
-      p "SETTING #########################################"
       @env[name] = v
     end
 

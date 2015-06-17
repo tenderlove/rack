@@ -60,6 +60,19 @@ module Rack
           @socket           = socket
         end
 
+        def has_header? key
+          @webrick_response.header.key? key
+        end
+
+        def headers
+          @webrick_response.header.dup
+        end
+
+        def get_header key
+          @webrick_response[key]
+        end
+        alias :[] :get_header
+
         def status= status
           @webrick_response.status = status
         end
@@ -78,10 +91,7 @@ module Rack
             res[k] = vs.split("\n").join(", ")
           end
         end
-
-        def get_header(k)
-          @webrick_response[k]
-        end
+        alias :[]= :set_header
 
         def write_head status, headers
           self.status = status
@@ -136,9 +146,10 @@ module Rack
         res.chunked = true
 
         m_req = @app.wrap_request Rack::Request.new env
-        m_res = @app.wrap_response Response.new res, wr
+        m_res = @app.wrap_response Response.new(res, wr), m_req
 
         @app.call(m_req, m_res)
+        m_res.finish
       end
     end
   end
