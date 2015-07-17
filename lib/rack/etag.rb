@@ -1,4 +1,5 @@
 require 'digest/md5'
+require 'rack/response'
 
 module Rack
   # Automatically sets the ETag header on all String bodies.
@@ -14,36 +15,6 @@ module Rack
     ETAG_STRING = 'ETag'.freeze
     DEFAULT_CACHE_CONTROL = "max-age=0, private, must-revalidate".freeze
 
-    class BufferedResponse < SimpleDelegator
-      def initialize res
-        super
-        @buffer = []
-      end
-
-      def write chunk
-        @buffer << chunk
-      end
-
-      def buffer
-        @buffer
-      end
-
-      def replace(buffer)
-        @buffer = buffer
-      end
-
-      def finish
-        if !Rack::Utils::STATUS_WITH_NO_ENTITY_BODY.include?(status.to_i) &&
-          !get_header(CONTENT_LENGTH) &&
-          !get_header(TRANSFER_ENCODING)
-
-          set_header CONTENT_LENGTH, @buffer.map { |part| part.bytesize }.inject(:+).to_s
-        end
-
-        @buffer.each { |chunk| __getobj__.write chunk }
-        super
-      end
-    end
 
     def initialize(app, no_cache_control = nil, cache_control = DEFAULT_CACHE_CONTROL)
       @app = app
@@ -52,7 +23,7 @@ module Rack
     end
 
     def call(req, res)
-      res = BufferedResponse.new res
+      res = Rack::Response::Buffered.new res
       @app.call(req, res)
 
       if etag_status?(res.status) && etag_body?(res.buffer) && !skip_caching?(req)
