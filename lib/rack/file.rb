@@ -27,16 +27,16 @@ module Rack
       @default_mime = default_mime
     end
 
-    def call(env)
-      dup._call(env)
+    def call(req, res)
+      dup._call(req, res)
     end
 
-    def _call(env)
-      unless ALLOWED_VERBS.include? env[REQUEST_METHOD]
-        return fail(405, "Method Not Allowed", {'Allow' => ALLOW_HEADER})
+    def _call(req, res)
+      unless ALLOWED_VERBS.include? req.request_method
+        return fail(res, 405, "Method Not Allowed", {'Allow' => ALLOW_HEADER})
       end
 
-      path_info = Utils.unescape(env[PATH_INFO])
+      path_info = Utils.unescape(req.path_info)
       clean_path_info = Utils.clean_path_info(path_info)
 
       @path = ::File.join(@root, clean_path_info)
@@ -48,52 +48,65 @@ module Rack
       end
 
       if available
-        serving(env)
+        serving(req, res)
       else
-        fail(404, "File not found: #{path_info}")
+        fail(res, 404, "File not found: #{path_info}")
       end
     end
 
-    def serving(env)
-      if env[REQUEST_METHOD] == OPTIONS
-        return [200, {'Allow' => ALLOW_HEADER, CONTENT_LENGTH => '0'}, []]
+    def serving(req, res)
+      if req.options?
+        res.status = 200
+        res.set_header 'Allow', ALLOW_HEADER
+        res.set_header CONTENT_LENGTH, '0'
+        return res
       end
-      last_modified = ::File.mtime(@path).httpdate
-      return [304, {}, []] if env['HTTP_IF_MODIFIED_SINCE'] == last_modified
 
-      headers = { "Last-Modified" => last_modified }
-      headers[CONTENT_TYPE] = mime_type if mime_type
+      last_modified = ::File.mtime(@path).httpdate
+      if req.get_header('HTTP_IF_MODIFIED_SINCE') == last_modified
+        res.status = 304
+        res.body = ''
+        return res
+      end
+
+      res.set_header "Last-Modified", last_modified
+      res.set_header(CONTENT_TYPE, mime_type) if mime_type
 
       # Set custom headers
-      @headers.each { |field, content| headers[field] = content } if @headers
+      @headers.each { |field, content| res.set_header field, content } if @headers
 
-      response = [ 200, headers, env[REQUEST_METHOD] == HEAD ? [] : self ]
+      res.status = 200
+      return res if req.head?
 
       size = filesize
 
-      ranges = Rack::Utils.byte_ranges(env, size)
+      ranges = Rack::Utils.byte_ranges(req.get_header("HTTP_RANGE"), size)
       if ranges.nil? || ranges.length > 1
         # No ranges, or multiple ranges (which we don't support):
         # TODO: Support multiple byte-ranges
-        response[0] = 200
+        res.status = 200
         @range = 0..size-1
       elsif ranges.empty?
         # Unsatisfiable. Return error, and file size:
-        response = fail(416, "Byte range unsatisfiable")
-        response[1]["Content-Range"] = "bytes */#{size}"
-        return response
+        res.set_header "Content-Range", "bytes */#{size}"
+        return fail(res, 416, "Byte range unsatisfiable")
       else
         # Partial content:
         @range = ranges[0]
-        response[0] = 206
-        response[1]["Content-Range"] = "bytes #{@range.begin}-#{@range.end}/#{size}"
+        res.status = 206
+        res.set_header "Content-Range", "bytes #{@range.begin}-#{@range.end}/#{size}"
         size = @range.end - @range.begin + 1
       end
 
-      response[2] = [response_body] unless response_body.nil?
-
-      response[1][CONTENT_LENGTH] = size.to_s
-      response
+      res.set_header CONTENT_LENGTH, size.to_s
+      if response_body.nil?
+        each do |part|
+          res.write part
+        end
+      else
+        res.write response_body
+      end
+      res.finish
     end
 
     def each
@@ -112,17 +125,15 @@ module Rack
 
     private
 
-    def fail(status, body, headers = {})
+    def fail(res, status, body, headers = {})
+      res.status = status
+      headers.each_pair { |k,v| res.set_header k, v }
+      res.set_header CONTENT_TYPE, 'text/plain'
+      res.set_header CONTENT_LENGTH, body.bytesize.to_s
+
       body += "\n"
-      [
-        status,
-        {
-          CONTENT_TYPE   => "text/plain",
-          CONTENT_LENGTH => body.size.to_s,
-          "X-Cascade" => "pass"
-        }.merge!(headers),
-        [body]
-      ]
+      res.body = body
+      res
     end
 
     # The MIME type for the contents of the file located at @path
