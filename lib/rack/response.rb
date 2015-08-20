@@ -141,7 +141,7 @@ module Rack
       def redirect?;            [301, 302, 303, 307].include? status; end
 
       def include?(header)
-        !!headers[header]
+        headers.key? header
       end
 
       def content_type
