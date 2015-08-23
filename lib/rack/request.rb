@@ -67,30 +67,6 @@ module Rack
       media_type_params['charset']
     end
 
-    def get_header(name)
-      if block_given?
-        @env.fetch(name) { |x| yield x }
-      else
-        @env[name]
-      end
-    end
-
-    def delete_header(name)
-      @env.delete name
-    end
-
-    def set_header(name, v)
-      @env[name] = v
-    end
-
-    def have_header?(name)
-      @env.key? name
-    end
-
-    def each_header(&block)
-      @env.each(&block)
-    end
-
     def scheme
       if @env[HTTPS] == 'on'
         'https'
