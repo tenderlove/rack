@@ -105,6 +105,37 @@ module Rack
       end
     end
 
+    # Get a request specific value for `name`. If a block is given, it yields
+    # to the block if the value hasn't been set on the request.
+    def get_header(name)
+      if block_given?
+        @env.fetch(name) { |x| yield x }
+      else
+        @env[name]
+      end
+    end
+
+    # Delete a request specific value for `name`.
+    def delete_header(name)
+      @env.delete name
+    end
+
+    # Set a request specific value for `name` to `v`
+    def set_header(name, v)
+      @env[name] = v
+    end
+
+    # Predicate method to test to see if `name` has been set as request
+    # specific data
+    def has_header?(name)
+      @env.key? name
+    end
+
+    # Loops through each key / value pair in the request specific data.
+    def each_header(&block)
+      @env.each(&block)
+    end
+
     def ssl?
       scheme == 'https'
     end
@@ -378,6 +409,10 @@ module Rack
       forwarded_ips = split_ip_addresses(@env['HTTP_X_FORWARDED_FOR'])
 
       return reject_trusted_ip_addresses(forwarded_ips).last || @env["REMOTE_ADDR"]
+    end
+
+    def initialize_copy(other)
+      @env = other.env.dup
     end
 
     protected

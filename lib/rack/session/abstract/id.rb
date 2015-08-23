@@ -1,6 +1,7 @@
 # AUTHOR: blink <blinketje@gmail.com>; blink#ruby-lang@irc.freenode.net
 # bugrep: Andreas Zehnder
 
+require 'rack'
 require 'time'
 require 'rack/request'
 require 'rack/response'
@@ -17,31 +18,31 @@ module Rack
         include Enumerable
         attr_writer :id
 
-        def self.find(env)
-          env[RACK_SESSION]
+        def self.find(req)
+          req.get_header RACK_SESSION
         end
 
-        def self.set(env, session)
-          env[RACK_SESSION] = session
+        def self.set(req, session)
+          req.set_header RACK_SESSION, session
         end
 
-        def self.set_options(env, options)
-          env[RACK_SESSION_OPTIONS] = options.dup
+        def self.set_options(req, options)
+          req.set_header RACK_SESSION_OPTIONS, options.dup
         end
 
-        def initialize(store, env)
+        def initialize(store, req)
           @store = store
-          @env = env
+          @req = req
           @loaded = false
         end
 
         def id
           return @id if @loaded or instance_variable_defined?(:@id)
-          @id = @store.send(:extract_session_id, @env)
+          @id = @store.send(:extract_session_id, @req)
         end
 
         def options
-          @env[RACK_SESSION_OPTIONS]
+          @req.get_header RACK_SESSION_OPTIONS
         end
 
         def each(&block)
@@ -75,7 +76,7 @@ module Rack
 
         def destroy
           clear
-          @id = @store.send(:destroy_session, @env, id, options)
+          @id = @store.send(:destroy_session, @req, id, options)
         end
 
         def to_hash
@@ -110,7 +111,7 @@ module Rack
         def exists?
           return @exists if instance_variable_defined?(:@exists)
           @data = {}
-          @exists = @store.send(:session_exists?, @env)
+          @exists = @store.send(:session_exists?, @req)
         end
 
         def loaded?
@@ -141,7 +142,7 @@ module Rack
         end
 
         def load!
-          @id, session = @store.send(:load_session, @env)
+          @id, session = @store.send(:load_session, @req)
           @data = stringify_keys(session)
           @loaded = true
         end
@@ -221,6 +222,10 @@ module Rack
 
         private
 
+        def make_request(env)
+          Rack::Request.new env
+        end
+
         def initialize_sid
           @sidbits = @default_options[:sidbits]
           @sid_secure = @default_options[:secure_random]
@@ -245,27 +250,25 @@ module Rack
         # metadata into 'rack.session.options'.
 
         def prepare_session(req)
-          session_was                  = req.get_header RACK_SESSION
-          session = session_class.new(self, env)
-          session.merge! session_was if session_was
-
+          session_was               = req.get_header RACK_SESSION
+          session                   = session_class.new(self, req)
           req.set_header RACK_SESSION, session
           req.set_header RACK_SESSION_OPTIONS, @default_options.dup
+          session.merge! session_was if session_was
         end
 
         # Extracts the session id from provided cookies and passes it and the
         # environment to #get_session.
 
-        def load_session(env)
-          sid = current_session_id(env)
-          sid, session = get_session(env, sid)
+        def load_session(req)
+          sid = current_session_id(req)
+          sid, session = get_session(req, sid)
           [sid, session || {}]
         end
 
         # Extract session id from request object.
 
-        def extract_session_id(env)
-          request = Rack::Request.new(env)
+        def extract_session_id(request)
           sid = request.cookies[@key]
           sid ||= request.params[@key] unless @cookie_only
           sid
@@ -279,8 +282,8 @@ module Rack
 
         # Check if the session exists or not.
 
-        def session_exists?(env)
-          value = current_session_id(env)
+        def session_exists?(req)
+          value = current_session_id(req)
           value && !value.empty?
         end
 
@@ -334,9 +337,9 @@ module Rack
           session_data = session.to_hash.delete_if { |k,v| v.nil? }
 
           if not data = set_session(req, session_id, session_data, options)
-            env[RACK_ERRORS].puts("Warning! #{self.class.name} failed to save session. Content dropped.")
+            req.get_header(RACK_ERRORS).puts("Warning! #{self.class.name} failed to save session. Content dropped.")
           elsif options[:defer] and not options[:renew]
-            env[RACK_ERRORS].puts("Deferring cookie for #{session_id}") if $VERBOSE
+            req.get_header(RACK_ERRORS).puts("Deferring cookie for #{session_id}") if $VERBOSE
           else
             cookie = Hash.new
             cookie[:value] = data
@@ -376,14 +379,14 @@ module Rack
         # Must return the session id if the session was saved successfully, or
         # false if the session could not be saved.
 
-        def set_session(env, sid, session, options)
+        def set_session(req, sid, session, options)
           raise '#set_session not implemented.'
         end
 
         # All thread safety and session destroy procedures should occur here.
         # Should return a new session id or nil if options[:drop]
 
-        def destroy_session(env, sid, options)
+        def destroy_session(req, sid, options)
           raise '#destroy_session not implemented'
         end
       end
