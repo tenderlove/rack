@@ -311,7 +311,13 @@ module Rack
     # Parses the "Range:" header, if present, into an array of Range objects.
     # Returns nil if the header is missing or syntactically invalid.
     # Returns an empty array if none of the ranges are satisfiable.
-    def byte_ranges(http_range, size)
+    def byte_ranges(env, size)
+      warn "`byte_ranges` is deprecated, please use `get_byte_ranges`" if $VERBOSE
+      get_byte_ranges env['HTTP_RANGE'], size
+    end
+    module_function :byte_ranges
+
+    def get_byte_ranges(http_range, size)
       # See <http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35>
       return nil unless http_range && http_range =~ /bytes=([^;]+)/
       ranges = []
@@ -338,7 +344,7 @@ module Rack
       end
       ranges
     end
-    module_function :byte_ranges
+    module_function :get_byte_ranges
 
     # Constant time string comparison.
     #
