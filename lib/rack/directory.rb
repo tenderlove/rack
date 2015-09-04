@@ -63,7 +63,7 @@ table { width:100%%; }
 
     def call(env)
       script_name = env[SCRIPT_NAME]
-      path_info = Utils.unescape(env[PATH_INFO])
+      path_info = Utils.unescape_path(env[PATH_INFO])
 
       if forbidden = check_forbidden(path_info)
         forbidden
@@ -93,7 +93,7 @@ table { width:100%%; }
 
       Dir[glob].sort.each do |node|
         stat = stat(node)
-        next  unless stat
+        next unless stat
         basename = ::File.basename(node)
         ext = ::File.extname(node)
 
@@ -111,9 +111,10 @@ table { width:100%%; }
       return [ 200, { CONTENT_TYPE =>'text/html; charset=utf-8'}, DirectoryBody.new(@root, path, files) ]
     end
 
-    def stat(node, max = 10)
+    def stat(node)
       ::File.stat(node)
     rescue Errno::ENOENT, Errno::ELOOP
+      puts "HI MOM"
       return nil
     end
 

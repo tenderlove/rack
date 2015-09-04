@@ -2,11 +2,30 @@ require 'minitest/autorun'
 require 'rack/directory'
 require 'rack/lint'
 require 'rack/mock'
+require 'tempfile'
+require 'fileutils'
 
 describe Rack::Directory do
   DOCROOT = File.expand_path(File.dirname(__FILE__)) unless defined? DOCROOT
   FILE_CATCH = proc{|env| [200, {'Content-Type'=>'text/plain', "Content-Length" => "7"}, ['passed!']] }
   app = Rack::Lint.new(Rack::Directory.new(DOCROOT, FILE_CATCH))
+
+  it 'serves directories with + in the name' do
+    Dir.mktmpdir do |dir|
+      plus_dir = "foo+bar"
+      full_dir = File.join(dir, plus_dir)
+      FileUtils.mkdir full_dir
+      FileUtils.touch File.join(full_dir, "omg.txt")
+      app = Rack::Directory.new(dir, FILE_CATCH)
+      env = Rack::MockRequest.env_for("/#{plus_dir}/")
+      status,_,body = app.call env
+
+      assert_equal 200, status
+
+      str = ''
+      body.each { |x| str << x }
+    end
+  end
 
   it "serve directory indices" do
     res = Rack::MockRequest.new(Rack::Lint.new(app)).
