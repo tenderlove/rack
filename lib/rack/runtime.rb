@@ -1,3 +1,5 @@
+require 'rack/utils'
+
 module Rack
   # Sets an "X-Runtime" response header, indicating the response
   # time of the request, in seconds
@@ -22,18 +24,6 @@ module Rack
 
       unless res.get_header(@header_name)
         res.set_header(@header_name, FORMAT_STRING % request_time)
-      end
-    end
-
-    private
-
-    if defined?(Process::CLOCK_MONOTONIC)
-      def clock_time
-        Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      end
-    else
-      def clock_time
-        Time.now.to_f
       end
     end
   end

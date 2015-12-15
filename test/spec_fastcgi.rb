@@ -1,5 +1,7 @@
-require 'minitest/autorun'
-begin
+require 'helper'
+
+if defined? LIGHTTPD_PID
+
 require File.expand_path('../testrequest', __FILE__)
 require 'rack/handler/fastcgi'
 
@@ -7,26 +9,9 @@ describe Rack::Handler::FastCGI do
   include TestRequest::Helpers
 
   before do
-  @host = '127.0.0.1'
-  @port = 9203
+    @host = '127.0.0.1'
+    @port = 9203
   end
-
-  if `which lighttpd` && !$?.success?
-    raise "lighttpd not found"
-  end
-
-  # Keep this first.
-  $pid = fork {
-    ENV['RACK_ENV'] = 'deployment'
-    ENV['RUBYLIB'] = [
-      File.expand_path('../../lib', __FILE__),
-      ENV['RUBYLIB'],
-    ].compact.join(':')
-
-    Dir.chdir(File.expand_path("../cgi", __FILE__)) do
-      exec "lighttpd -D -f lighttpd.conf"
-    end
-  }
 
   it "respond" do
     sleep 1
@@ -95,16 +80,6 @@ describe Rack::Handler::FastCGI do
     status.must_equal 403
     response["rack.url_scheme"].must_equal "http"
   end
-
-  # Keep this last.
-  it "shutdown" do
-    Process.kill 15, $pid
-    Process.wait($pid).must_equal $pid
-  end
 end
 
-rescue RuntimeError
-  $stderr.puts "Skipping Rack::Handler::FastCGI tests (lighttpd is required). Install lighttpd and try again."
-rescue LoadError
-  $stderr.puts "Skipping Rack::Handler::FastCGI tests (FCGI is required). `gem install fcgi` and try again."
-end
+end # if defined? LIGHTTPD_PID

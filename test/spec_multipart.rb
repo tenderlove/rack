@@ -1,5 +1,9 @@
 # coding: utf-8
 
+require 'minitest/autorun'
+require 'rack'
+require 'rack/multipart'
+require 'rack/multipart/parser'
 require 'rack/utils'
 require 'rack/mock'
 
@@ -137,6 +141,14 @@ describe Rack::Multipart do
     err = thr.value
     err.must_be_instance_of Errno::EPIPE
     wr.close
+  end
+
+  it 'raises an EOF error on content-length mistmatch' do
+    env = Rack::MockRequest.env_for("/", multipart_fixture(:empty))
+    env['rack.input'] = StringIO.new
+    assert_raises(EOFError) do
+      Rack::Multipart.parse_multipart(env)
+    end
   end
 
   it "parse multipart upload with text file" do
@@ -295,7 +307,7 @@ describe Rack::Multipart do
 
   it "parse multipart/mixed" do
     env = Rack::MockRequest.env_for("/", multipart_fixture(:mixed_files))
-    params = Rack::Utils::Multipart.parse_multipart(env)
+    params = Rack::Multipart.parse_multipart(env)
     params["foo"].must_equal "bar"
     params["files"].must_be_instance_of String
     params["files"].size.must_equal 252
@@ -561,7 +573,7 @@ EOF
       :input => StringIO.new(data)
     }
     env = Rack::MockRequest.env_for("/", options)
-    params = Rack::Utils::Multipart.parse_multipart(env)
+    params = Rack::Multipart.parse_multipart(env)
 
     params.must_equal "description"=>"Very very blue"
   end
@@ -590,9 +602,49 @@ contents\r
       :input => StringIO.new(data)
     }
     env = Rack::MockRequest.env_for("/", options)
-    params = Rack::Utils::Multipart.parse_multipart(env)
+    params = Rack::Multipart.parse_multipart(env)
 
     params["file"][:filename].must_equal 'long' * 100
+  end
+
+  it "parse unquoted parameter values at end of line" do
+    data = <<-EOF
+--AaB03x\r
+Content-Type: text/plain\r
+Content-Disposition: attachment; name=inline\r
+\r
+true\r
+--AaB03x--\r
+    EOF
+
+    options = {
+      "CONTENT_TYPE" => "multipart/form-data; boundary=AaB03x",
+      "CONTENT_LENGTH" => data.length.to_s,
+      :input => StringIO.new(data)
+    }
+    env = Rack::MockRequest.env_for("/", options)
+    params = Rack::Multipart.parse_multipart(env)
+    params["inline"].must_equal 'true'
+  end
+
+  it "parse quoted chars in name parameter" do
+    data = <<-EOF
+--AaB03x\r
+Content-Type: text/plain\r
+Content-Disposition: attachment; name="quoted\\\\chars\\"in\rname"\r
+\r
+true\r
+--AaB03x--\r
+    EOF
+
+    options = {
+      "CONTENT_TYPE" => "multipart/form-data; boundary=AaB03x",
+      "CONTENT_LENGTH" => data.length.to_s,
+      :input => StringIO.new(data)
+    }
+    env = Rack::MockRequest.env_for("/", options)
+    params = Rack::Multipart.parse_multipart(env)
+    params["quoted\\chars\"in\rname"].must_equal 'true'
   end
 
   it "support mixed case metadata" do
@@ -640,11 +692,11 @@ Content-Type: image/png\r
 
     options = {
       "CONTENT_TYPE" => "multipart/related; boundary=AaB03x",
-      "CONTENT_LENGTH" => data.length.to_s,
+      "CONTENT_LENGTH" => data.bytesize.to_s,
       :input => StringIO.new(data)
     }
     env = Rack::MockRequest.env_for("/", options)
-    params = Rack::Utils::Multipart.parse_multipart(env)
+    params = Rack::Multipart.parse_multipart(env)
 
     params["text/plain"].must_equal ["some text", "some more text (I didn't specify Content-Type)"]
     params["image/png"].length.must_equal 1

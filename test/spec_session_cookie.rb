@@ -152,6 +152,21 @@ describe Rack::Session::Cookie do
     @warnings.must_be :empty?
   end
 
+  it "doesn't warn if coder is configured to handle encoding" do
+    Rack::Session::Cookie.new(
+      incrementor,
+      :coder => Object.new,
+      :let_coder_handle_secure_encoding => true)
+    @warnings.must_be :empty?
+  end
+
+  it "still warns if coder is not set" do
+    Rack::Session::Cookie.new(
+      incrementor,
+      :let_coder_handle_secure_encoding => true)
+    @warnings.first.must_match(/no secret/i)
+  end
+
   it 'uses a coder' do
     identity = Class.new {
       attr_reader :calls
@@ -294,6 +309,22 @@ describe Rack::Session::Cookie do
 
     response = response_for(:app => app, :cookie => response)
     response.body.must_equal '{"counter"=>2}'
+  end
+
+  it "supports custom digest class" do
+    app = [incrementor, { :secret => "test", hmac: OpenSSL::Digest::SHA256 }]
+
+    response = response_for(:app => app)
+    response = response_for(:app => app, :cookie => response)
+    response.body.must_equal '{"counter"=>2}'
+
+    response = response_for(:app => app, :cookie => response)
+    response.body.must_equal '{"counter"=>3}'
+
+    app = [incrementor, { :secret => "other" }]
+
+    response = response_for(:app => app, :cookie => response)
+    response.body.must_equal '{"counter"=>1}'
   end
 
   it "can handle Rack::Lint middleware" do

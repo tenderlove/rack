@@ -1,5 +1,7 @@
-require 'minitest/autorun'
-begin
+require 'helper'
+
+if defined? LIGHTTPD_PID
+
 require File.expand_path('../testrequest', __FILE__)
 require 'rack/handler/cgi'
 
@@ -7,30 +9,12 @@ describe Rack::Handler::CGI do
   include TestRequest::Helpers
 
   before do
-  @host = '127.0.0.1'
-  @port = 9203
+    @host = '127.0.0.1'
+    @port = 9203
   end
 
   if `which lighttpd` && !$?.success?
     raise "lighttpd not found"
-  end
-
-  # Keep this first.
-  PID = fork {
-    ENV['RACK_ENV'] = 'deployment'
-    ENV['RUBYLIB'] = [
-      File.expand_path('../../lib', __FILE__),
-      ENV['RUBYLIB'],
-    ].compact.join(':')
-
-    Dir.chdir(File.expand_path("../cgi", __FILE__)) do
-      exec "lighttpd -D -f lighttpd.conf"
-    end
-  }
-
-  Minitest.after_run do
-    Process.kill 15, PID
-    Process.wait(PID)
   end
 
   it "respond" do
@@ -97,8 +81,4 @@ describe Rack::Handler::CGI do
   end
 end
 
-rescue RuntimeError
-  $stderr.puts "Skipping Rack::Handler::CGI tests (lighttpd is required). Install lighttpd and try again."
-rescue NotImplementedError
-  $stderr.puts "Your Ruby implemenation or platform does not support fork. Skipping Rack::Handler::CGI tests."
-end
+end # if defined? LIGHTTPD_PID

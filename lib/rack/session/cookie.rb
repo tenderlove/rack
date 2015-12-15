@@ -45,7 +45,7 @@ module Rack
     #   })
     #
 
-    class Cookie < Abstract::ID
+    class Cookie < Abstract::Persisted
       # Encode session cookies as Base64
       class Base64
         def encode(str)
@@ -105,7 +105,9 @@ module Rack
 
       def initialize(app, options={})
         @secrets = options.values_at(:secret, :old_secret).compact
-        warn <<-MSG unless @secrets.size >= 1
+        @hmac = options.fetch(:hmac, OpenSSL::Digest::SHA1)
+
+        warn <<-MSG unless secure?(options)
         SECURITY WARNING: No secret option provided to Rack::Session::Cookie.
         This poses a security threat. It is strongly recommended that you
         provide a secret to prevent exploits that may be possible from crafted
@@ -120,7 +122,7 @@ module Rack
 
       private
 
-      def get_session(req, sid)
+      def find_session(req, sid)
         data = unpacked_cookie_data(req)
         data = persistent_session_id!(data)
         [data["session_id"], data]
@@ -131,7 +133,7 @@ module Rack
       end
 
       def unpacked_cookie_data(request)
-        request.get_header(RACK_SESSION_UNPACKED_COOKIE_DATA) do |k|
+        request.fetch_header(RACK_SESSION_UNPACKED_COOKIE_DATA) do |k|
           session_data = request.cookies[@key]
 
           if @secrets.size > 0 && session_data
@@ -151,7 +153,7 @@ module Rack
         data
       end
 
-      def set_session(req, session_id, session, options)
+      def write_session(req, session_id, session, options)
         session = session.merge("session_id" => session_id)
         session_data = coder.encode(session)
 
@@ -167,7 +169,7 @@ module Rack
         end
       end
 
-      def destroy_session(req, session_id, options)
+      def delete_session(req, session_id, options)
         # Nothing to do here, data is in the client
         generate_sid unless options[:drop]
       end
@@ -180,7 +182,12 @@ module Rack
       end
 
       def generate_hmac(data, secret)
-        OpenSSL::HMAC.hexdigest(OpenSSL::Digest::SHA1.new, secret, data)
+        OpenSSL::HMAC.hexdigest(@hmac.new, secret, data)
+      end
+
+      def secure?(options)
+        @secrets.size >= 1 ||
+        (options[:coder] && options[:let_coder_handle_secure_encoding])
       end
 
     end

@@ -1,3 +1,78 @@
+Tue Nov  3 16:17:26 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Add `Rack::Events` middleware for adding event based middleware:
+	middleware that does not care about the response body, but only cares
+	about doing work at particular points in the request / response
+	lifecycle.
+
+Thu Oct  8 14:58:46 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Add `Rack::Request#authority` to calculate the authority under which
+	the response is being made (this will be handy for h2 pushes).
+
+Tue Oct  6 13:19:04 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Add `Rack::Response::Helpers#cache_control` and `cache_control=`.
+	Use this for setting cache control headers on your response objects.
+
+Tue Oct  6 13:12:21 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Add `Rack::Response::Helpers#etag` and `etag=`.  Use this for
+	setting etag values on the response.
+
+Sun Oct 3 18:25:03 2015  Jeremy Daer <jeremydaer@gmail.com>
+
+	* Introduce `Rack::Response::Helpers#add_header` to add a value to a
+	multi-valued response header. Implemented in terms of other
+	`Response#*_header` methods, so it's available to any response-like
+	class that includes the `Helpers` module.
+
+	* Add `Rack::Request#add_header` to match.
+
+Fri Sep  4 18:34:53 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* `Rack::Session::Abstract::ID` IS DEPRECATED.  Please switch to
+	`Rack::Session::Abstract::Persisted`.
+	`Rack::Session::Abstract::Persisted` uses a request object rather than
+	the `env` hash.
+
+Fri Sep  4 17:32:12 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Pull `ENV` access inside the request object in to a module.  This
+	will help with legacy Request objects that are ENV based but don't
+	want to inherit from Rack::Request
+
+Fri Sep  4 16:09:11 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Move most methods on the `Rack::Request` to a module
+	`Rack::Request::Helpers` and use public API to get values from the
+	request object.  This enables users to mix `Rack::Request::Helpers` in
+	to their own objects so they can implement
+	`(get|set|fetch|each)_header` as they see fit (for example a proxy
+	object).
+
+Fri Sep  4 14:15:32 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Files and directories with + in the name are served correctly.
+	Rather than unescaping paths like a form, we unescape with a URI
+	parser using `Rack::Utils.unescape_path`. Fixes #265
+
+Thu Aug 27 15:43:48 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Tempfiles are automatically closed in the case that there were too
+	many posted.
+
+Thu Aug 27 11:00:03 2015  Aaron Patterson <tenderlove@ruby-lang.org>
+
+	* Added methods for manipulating response headers that don't assume
+	they're stored as a Hash. Response-like classes may include the
+	Rack::Response::Helpers module if they define these methods:
+
+	  * Rack::Response#has_header?
+	  * Rack::Response#get_header
+	  * Rack::Response#set_header
+	  * Rack::Response#delete_header
+
 Mon Aug 24 18:05:23 2015  Aaron Patterson <tenderlove@ruby-lang.org>
 
 	* Introduce Util.get_byte_ranges that will parse the value of the
@@ -22,10 +97,12 @@ Thu Aug 20 16:20:58 2015  Aaron Patterson <tenderlove@ruby-lang.org>
 	data set as CGI parameters, and just any arbitrary data the user wants
 	to associate with a particular request.  New methods:
 
-	  * Rack::Request#get_header
-	  * Rack::Request#set_header
 	  * Rack::Request#has_header?
+	  * Rack::Request#get_header
+	  * Rack::Request#fetch_header
 	  * Rack::Request#each_header
+	  * Rack::Request#set_header
+	  * Rack::Request#delete_header
 
 Thu Jun 18 16:00:05 2015  Aaron Patterson <tenderlove@ruby-lang.org>
 

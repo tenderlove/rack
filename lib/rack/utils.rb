@@ -1,12 +1,10 @@
 # -*- encoding: binary -*-
+require 'uri'
 require 'fileutils'
 require 'set'
 require 'tempfile'
-require 'rack/multipart'
 require 'rack/query_parser'
 require 'time'
-
-require 'uri/common'
 
 module Rack
   # Rack::Utils contains a grab-bag of useful methods for writing web
@@ -35,9 +33,17 @@ module Rack
     # Like URI escaping, but with %20 instead of +. Strictly speaking this is
     # true URI escaping.
     def escape_path(s)
-      escape(s).gsub('+', '%20')
+      ::URI::DEFAULT_PARSER.escape s
     end
     module_function :escape_path
+
+    # Unescapes the **path** component of a URI.  See Rack::Utils.unescape for
+    # unescaping query parameters or form components.
+    def unescape_path(s)
+      ::URI::DEFAULT_PARSER.unescape s
+    end
+    module_function :unescape_path
+
 
     # Unescapes a URI escaped string with +encoding+. +encoding+ will be the
     # target encoding of the string returned, and it defaults to UTF-8
@@ -53,8 +59,7 @@ module Rack
     # The maximum number of parts a request can contain. Accepting too many part
     # can lead to the server running out of file handles.
     # Set to `0` for no limit.
-    # FIXME: RACK_MULTIPART_LIMIT was introduced by mistake and it will be removed in 1.7.0
-    self.multipart_part_limit = (ENV['RACK_MULTIPART_PART_LIMIT'] || ENV['RACK_MULTIPART_LIMIT'] || 128).to_i
+    self.multipart_part_limit = (ENV['RACK_MULTIPART_PART_LIMIT'] || 128).to_i
 
     def self.param_depth_limit
       default_query_parser.param_depth_limit
@@ -71,6 +76,17 @@ module Rack
     def self.key_space_limit=(v)
       self.default_query_parser = self.default_query_parser.new_space_limit(v)
     end
+
+    if defined?(Process::CLOCK_MONOTONIC)
+      def clock_time
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+    else
+      def clock_time
+        Time.now.to_f
+      end
+    end
+    module_function :clock_time
 
     def parse_query(qs, d = nil, &unescaper)
       Rack::Utils.default_query_parser.parse_query(qs, d, &unescaper)
@@ -184,17 +200,22 @@ module Rack
     module_function :select_best_encoding
 
     def parse_cookies(env)
+      parse_cookies_header env[HTTP_COOKIE]
+    end
+    module_function :parse_cookies
+
+    def parse_cookies_header(header)
       # According to RFC 2109:
       #   If multiple cookies satisfy the criteria above, they are ordered in
       #   the Cookie header such that those with more specific Path attributes
       #   precede those with less specific.  Ordering with respect to other
       #   attributes (e.g., Domain) is unspecified.
-      cookies = parse_query(env[HTTP_COOKIE], ';,') { |s| unescape(s) rescue s }
+      cookies = parse_query(header, ';,') { |s| unescape(s) rescue s }
       cookies.each_with_object({}) { |(k,v), hash| hash[k] = Array === v ? v.first : v }
     end
-    module_function :parse_cookies
+    module_function :parse_cookies_header
 
-    def make_cookie_header(header, key, value)
+    def add_cookie_to_header(header, key, value)
       case value
       when Hash
         domain  = "; domain=#{value[:domain]}"   if value[:domain]
@@ -207,7 +228,7 @@ module Rack
         #
         # These are best described in RFC 2616 3.3.1. This RFC text also
         # specifies that RFC 822 as updated by RFC 1123 is preferred. That is a
-        # fixed length format with space-date delimeted fields.
+        # fixed length format with space-date delimited fields.
         #
         # See also RFC 1123 section 5.2.14.
         #
@@ -241,12 +262,14 @@ module Rack
         [header, cookie].join("\n")
       when Array
         (header + [cookie]).join("\n")
+      else
+        raise ArgumentError, "Unrecognized cookie header value. Expected String, Array, or nil, got #{header.inspect}"
       end
     end
-    module_function :make_cookie_header
+    module_function :add_cookie_to_header
 
     def set_cookie_header!(header, key, value)
-      header[SET_COOKIE] = make_cookie_header(header[SET_COOKIE], key, value)
+      header[SET_COOKIE] = add_cookie_to_header(header[SET_COOKIE], key, value)
       nil
     end
     module_function :set_cookie_header!
@@ -276,16 +299,23 @@ module Rack
     module_function :make_delete_cookie_header
 
     def delete_cookie_header!(header, key, value = {})
-      new_header = make_delete_cookie_header(header[SET_COOKIE], key, value)
+      header[SET_COOKIE] = add_remove_cookie_to_header(header[SET_COOKIE], key, value)
+      nil
+    end
+    module_function :delete_cookie_header!
 
-      header[SET_COOKIE] = make_cookie_header(new_header, key,
+    # Adds a cookie that will *remove* a cookie from the client.  Hence the
+    # strange method name.
+    def add_remove_cookie_to_header(header, key, value = {})
+      new_header = make_delete_cookie_header(header, key, value)
+
+      add_cookie_to_header(new_header, key,
                  {:value => '', :path => nil, :domain => nil,
                    :max_age => '0',
                    :expires => Time.at(0) }.merge(value))
 
-      nil
     end
-    module_function :delete_cookie_header!
+    module_function :add_remove_cookie_to_header
 
     def rfc2822(time)
       time.rfc2822
@@ -512,6 +542,7 @@ module Rack
       415 => 'Unsupported Media Type',
       416 => 'Range Not Satisfiable',
       417 => 'Expectation Failed',
+      421 => 'Misdirected Request',
       422 => 'Unprocessable Entity',
       423 => 'Locked',
       424 => 'Failed Dependency',
@@ -547,8 +578,6 @@ module Rack
       end
     end
     module_function :status_code
-
-    Multipart = Rack::Multipart
 
     PATH_SEPS = Regexp.union(*[::File::SEPARATOR, ::File::ALT_SEPARATOR].compact)
 

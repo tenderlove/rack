@@ -5,7 +5,7 @@ require 'rack/content_length'
 require 'ds9'
 
 # This monkey patch allows for applications to perform their own chunking
-# through WEBrick::HTTPResponse iff rack is set to true.
+# through WEBrick::HTTPResponse if rack is set to true.
 class WEBrick::HTTPResponse
   attr_accessor :rack
 
